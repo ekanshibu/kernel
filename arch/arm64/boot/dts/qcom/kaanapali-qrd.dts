@@ -7,6 +7,7 @@
 
 #include <dt-bindings/regulator/qcom,rpmh-regulator.h>
 #include "kaanapali.dtsi"
+#include "pmih0108-kaanapali.dtsi"
 
 / {
 	model = "Qualcomm Technologies, Inc. Kaanapali QRD";
