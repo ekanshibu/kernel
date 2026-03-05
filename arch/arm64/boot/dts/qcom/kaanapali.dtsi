@@ -449,6 +449,15 @@
 			qcom,client-id = <1>;
 			qcom,vmid = <QCOM_SCM_VMID_MSS_MSA>;
 		};
+
+		fastrpc_far_region: fastrpc_far_region {
+			iommu-addresses = <&fastrpc_far_cb 0x0 0x0 0x3 0xFFFFFFFF>;
+		};
+		
+		fastrpc_far_iova_low_resv: fastrpc-far-iova-low-resv {
+			/* reserve [0 .. 16GiB) */
+			iommu-addresses = <&fastrpc_far_cb 0x0 0x00000000  0x4 0x00000000>;
+		};
 	};
 
 	smp2p-adsp {
@@ -5938,15 +5947,21 @@
 						dma-coherent;
 					};
 
-					compute-cb@13 {
+					fastrpc_far_cb: compute-cb@13 {
 						compatible = "qcom,fastrpc-compute-cb";
 						reg = <13>;
+
+						#address-cells = <2>;
+						#size-cells = <2>;
+
 						iommus = <&apps_smmu 0x196d 0x0>,
 							 <&apps_smmu 0x0c0d 0x40>,
 							 <&apps_smmu 0x0c2e 0x0>,
 							 <&apps_smmu 0x0c2d 0x0>,
 							 <&apps_smmu 0x19cd 0x0>;
+						memory-region = <&fastrpc_far_iova_low_resv>;
 						dma-coherent;
+						qcom,extended-cb;
 					};
 				};
 			};
