@@ -287,6 +287,8 @@ struct fastrpc_channel_ctx {
 	struct qcom_scm_vmperm vmperms[FASTRPC_MAX_VMIDS];
 	struct rpmsg_device *rpdev;
 	struct fastrpc_session_ctx session[FASTRPC_MAX_SESSIONS];
+	/* Extended mapping session */
+	struct fastrpc_session_ctx extsess;
 	spinlock_t lock;
 	struct idr ctx_idr;
 	struct list_head users;
@@ -2320,21 +2322,37 @@ static int fastrpc_cb_probe(struct platform_device *pdev)
 	unsigned long flags;
 	int rc;
 	u32 dma_bits;
+	bool is_extended_cb;
 
 	cctx = dev_get_drvdata(dev->parent);
 	if (!cctx)
 		return -EINVAL;
 
 	of_property_read_u32(dev->of_node, "qcom,nsessions", &sessions);
+	is_extended_cb = of_property_read_bool(dev->of_node, "qcom,extended-cb");
 
 	spin_lock_irqsave(&cctx->lock, flags);
-	if (cctx->sesscount >= FASTRPC_MAX_SESSIONS) {
-		dev_err(&pdev->dev, "too many sessions\n");
-		spin_unlock_irqrestore(&cctx->lock, flags);
-		return -ENOSPC;
+
+	/* Check if this is an extended CB session */
+	if (is_extended_cb) {
+		/* Store in extsess instead of session array */
+		if (cctx->extsess.valid) {
+			dev_err(&pdev->dev, "extended session already exists\n");
+			spin_unlock_irqrestore(&cctx->lock, flags);
+			return -EEXIST;
+		}
+		sess = &cctx->extsess;
+	} else {
+		/* Regular session - store in session array */
+		if (cctx->sesscount >= FASTRPC_MAX_SESSIONS) {
+			dev_err(&pdev->dev, "too many sessions\n");
+			spin_unlock_irqrestore(&cctx->lock, flags);
+			return -ENOSPC;
+		}
+		sess = &cctx->session[cctx->sesscount++];
 	}
+
 	dma_bits = cctx->soc_data->dma_addr_bits_default;
-	sess = &cctx->session[cctx->sesscount++];
 	sess->used = false;
 	sess->valid = true;
 	sess->dev = dev;
@@ -2346,7 +2364,8 @@ static int fastrpc_cb_probe(struct platform_device *pdev)
 	if (of_property_read_u32(dev->of_node, "reg", &sess->sid))
 		dev_info(dev, "FastRPC Session ID not specified in DT\n");
 
-	if (sessions > 0) {
+	/* Only duplicate sessions for non-extended CBs */
+	if (!is_extended_cb && sessions > 0) {
 		struct fastrpc_session_ctx *dup_sess;
 
 		for (i = 1; i < sessions; i++) {
@@ -2356,6 +2375,10 @@ static int fastrpc_cb_probe(struct platform_device *pdev)
 			memcpy(dup_sess, sess, sizeof(*dup_sess));
 		}
 	}
+
+	if (is_extended_cb)
+		dma_bits = 40;
+
 	spin_unlock_irqrestore(&cctx->lock, flags);
 	rc = dma_set_mask(dev, DMA_BIT_MASK(dma_bits));
 	if (rc) {
@@ -2374,10 +2397,17 @@ static void fastrpc_cb_remove(struct platform_device *pdev)
 	int i;
 
 	spin_lock_irqsave(&cctx->lock, flags);
-	for (i = 0; i < FASTRPC_MAX_SESSIONS; i++) {
-		if (cctx->session[i].sid == sess->sid) {
-			cctx->session[i].valid = false;
-			cctx->sesscount--;
+
+	/* Check if this is the extended session */
+	if (sess == &cctx->extsess) {
+		cctx->extsess.valid = false;
+	} else {
+		/* Regular session - search in session array */
+		for (i = 0; i < FASTRPC_MAX_SESSIONS; i++) {
+			if (cctx->session[i].sid == sess->sid) {
+				cctx->session[i].valid = false;
+				cctx->sesscount--;
+			}
 		}
 	}
 	spin_unlock_irqrestore(&cctx->lock, flags);
