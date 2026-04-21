@@ -26,6 +26,7 @@
 #include <linux/iopoll.h>
 #include <linux/bitfield.h>
 #include <linux/bits.h>
+#include <linux/iommu.h>
 
 #define ADSP_DOMAIN_ID (0)
 #define MDSP_DOMAIN_ID (1)
@@ -799,9 +800,10 @@ static const struct dma_buf_ops fastrpc_dma_buf_ops = {
 	.release = fastrpc_release,
 };
 
-static dma_addr_t fastrpc_compute_dma_addr(struct fastrpc_user *fl, dma_addr_t sg_dma_addr)
+static dma_addr_t fastrpc_compute_dma_addr(struct fastrpc_user *fl, dma_addr_t sg_dma_addr,
+					   struct fastrpc_session_ctx *sess)
 {
-	return sg_dma_addr + fastrpc_sid_offset(fl->cctx, fl->sctx);
+	return sg_dma_addr + fastrpc_sid_offset(fl->cctx, sess);
 }
 
 static int fastrpc_map_attach(struct fastrpc_user *fl, int fd,
@@ -815,10 +817,15 @@ static int fastrpc_map_attach(struct fastrpc_user *fl, int fd,
 	int err = 0, sgl_index = 0;
 
 	/* Check if extended mapping is requested */
-	if (IS_EXTENDED_MAP_FLAG(flags) && fl->cctx->extsess.valid && fl->cctx->extsess.dev)
+	if (IS_EXTENDED_MAP_FLAG(flags) && fl->cctx->extsess.valid && fl->cctx->extsess.dev) {
 		dev = fl->cctx->extsess.dev;
-	else
+		sess = &fl->cctx->extsess;
+	} else {
 		dev = sess->dev;
+		if (IS_EXTENDED_MAP_FLAG(flags))
+			pr_err("Extended mapping requested but extsess not available (valid=%d dev=%p), using regular session - fd=%d len=0x%llx flags=0x%x\n",
+			       fl->cctx->extsess.valid, fl->cctx->extsess.dev, fd, len, flags);
+	}
 
 	map = kzalloc(sizeof(*map), GFP_KERNEL);
 	if (!map)
@@ -852,7 +859,8 @@ static int fastrpc_map_attach(struct fastrpc_user *fl, int fd,
 	if (attr & FASTRPC_ATTR_SECUREMAP)
 		map->dma_addr = sg_phys(map->table->sgl);
 	else
-		map->dma_addr = fastrpc_compute_dma_addr(fl, sg_dma_address(map->table->sgl));
+		map->dma_addr = fastrpc_compute_dma_addr(fl, sg_dma_address(map->table->sgl), sess);
+
 	for_each_sg(map->table->sgl, sgl, map->table->nents,
 		sgl_index)
 		map->size += sg_dma_len(sgl);
@@ -1111,6 +1119,7 @@ static int fastrpc_get_args(u32 kernel, struct fastrpc_invoke_ctx *ctx)
 			pg_start = (rpra[i].buf.pv & PAGE_MASK) >> PAGE_SHIFT;
 			pg_end = ((rpra[i].buf.pv + len - 1) & PAGE_MASK) >> PAGE_SHIFT;
 			pages[i].size = (pg_end - pg_start + 1) * PAGE_SIZE;
+
 			args = args + mlen;
 			rlen -= mlen;
 		}

@@ -453,11 +453,6 @@
 		fastrpc_far_region: fastrpc_far_region {
 			iommu-addresses = <&fastrpc_far_cb 0x0 0x0 0x3 0xFFFFFFFF>;
 		};
-		
-		fastrpc_far_iova_low_resv: fastrpc-far-iova-low-resv {
-			/* reserve [0 .. 16GiB) */
-			iommu-addresses = <&fastrpc_far_cb 0x0 0x00000000  0x4 0x00000000>;
-		};
 	};
 
 	smp2p-adsp {
@@ -5838,6 +5833,8 @@
 			qcom,qmp = <&aoss_qmp>;
 			qcom,smem-states = <&smp2p_cdsp_out 0>;
 			qcom,smem-state-names = "stop";
+			#address-cells = <2>;
+			#size-cells = <2>;
 
 			status = "disabled";
 
@@ -5849,13 +5846,15 @@
 						IPCC_MPROC_SIGNAL_GLINK_QMP>;
 				qcom,remote-pid = <5>;
 				label = "cdsp";
+				#address-cells = <2>;
+				#size-cells = <2>;
 
 				fastrpc {
 					compatible = "qcom,kaanapali-fastrpc";
 					qcom,glink-channels = "fastrpcglink-apps-dsp";
 					label = "cdsp";
-					#address-cells = <1>;
-					#size-cells = <0>;
+					#address-cells = <2>;
+					#size-cells = <2>;
 
 					compute-cb@1 {
 						compatible = "qcom,fastrpc-compute-cb";
@@ -5951,15 +5950,12 @@
 						compatible = "qcom,fastrpc-compute-cb";
 						reg = <13>;
 
-						#address-cells = <2>;
-						#size-cells = <2>;
-
 						iommus = <&apps_smmu 0x196d 0x0>,
 							 <&apps_smmu 0x0c0d 0x40>,
 							 <&apps_smmu 0x0c2e 0x0>,
 							 <&apps_smmu 0x0c2d 0x0>,
 							 <&apps_smmu 0x19cd 0x0>;
-						memory-region = <&fastrpc_far_iova_low_resv>;
+						memory-region = <&fastrpc_far_region>;
 						dma-coherent;
 						qcom,extended-cb;
 					};
